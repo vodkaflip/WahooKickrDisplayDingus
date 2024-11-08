@@ -1,4 +1,4 @@
-# define cVERSION "20240120"
+# define cVERSION "20241030"
 // Check and set the default values for rider Weight in Kilograms, FTP in watts - enter FTP in increments of 5!
 // These defaults can be changed and saved directly thru the Dingus interface
 // by pressing both buttons at once and following the prompts.   Those changes
@@ -7,8 +7,7 @@
 #define defaultWEIGHT 67
 #define defaultFTP 180
 // RESOLUTION
-// 170 x 320 ... LILYGO T-Display-S3 ESP32-S3
-// 135 x 240 ... LILYGO TTGO T-Display ESP32
+// 320 x 170 ... LILYGO T-Display-S3 ESP32-S3
 #define RESOLUTION_X 320
 #define RESOLUTION_Y 170
 /*********************************************************************************************************
@@ -91,6 +90,9 @@ Change Log:
 01/20/2024 - revamped button debounce logic to avoid jumping thru two or more states when changing power model or time avg interval.
             chained chain path graphic to use arcs rather than coloring the entire front and rear ring.  Tinkered with the crank
             revolution logic to average across the last 12 observations (typically 1 to 3 seconds)
+10/30/2024  several changes to ensure it compiles on the latest Arduino IDE (2.3.3) - std::string is not available. Also added fix for
+            removed gearing UUID (see issue #2). Removed reference to the original T-Display, as the screen is too small for all the 
+            features to show correctly.
 
 
 **********************************************************************************************************/
@@ -99,9 +101,9 @@ Change Log:
 // or powered off, you can just power up your dingus and hold both buttons to enter demo mode without having to recompile
 // and push this program with the flag set to true
 boolean demoMode = false; // true or false, if true put dingus in a demo loop, and will not care if kickr is available
-
 #include "BLEDevice.h"
-#include <TFT_eSPI.h> // Graphics and font library for ST7735 driver chip
+#include <TFT_eSPI.h> // Graphics and font library for ST7789 driver chip.
+                      // For the T-Display S3, enable Setup 206 in ~/libraries/TFT_eSPI/User_Setup_Select.h. also disable #include <User_Setup.h>
 #include <SPI.h>
 #include <EEPROM.h> // to store settings between power cycles
 #define EEPROM_SIZE 6 // 1 byte for power mode (watts or w/kg), 1 byte for avg mode (instant, 3s, 10s), 2 bytes each for weight and ftp
@@ -272,7 +274,7 @@ bool connectToServer() {
     Serial.println(" - Found our gearing characteristic");
     // Read the value of the characteristic.
     if(pRemoteCharacteristic->canRead()) {
-      std::string value = pRemoteCharacteristic->readValue();
+      String value = pRemoteCharacteristic->readValue();
       Serial.print("The gearing characteristic value was: ");
       Serial.println(value.c_str());
     }
@@ -302,10 +304,10 @@ bool connectToServer() {
     Serial.println(" - Found our tilt characteristic");
     // Read the value of the characteristic.
     if(pRemoteCharacteristic2->canRead()) {
-      std::string value = pRemoteCharacteristic2->readValue();
+      String value = pRemoteCharacteristic2->readValue();
       std::copy(value.begin(), value.end(), std::begin(arr));
       Serial.print("currentGrade or lock first read : ");
-      calcTileAndLock(arr, value.size());
+      calcTileAndLock(arr, value.length());
     }
     if(pRemoteCharacteristic2->canNotify()) {
          pRemoteCharacteristic2->registerForNotify(notifyCallbackGrade);       
@@ -332,7 +334,7 @@ bool connectToServer() {
     Serial.println(" - Found our Power and Cadence characteristic");
     // Read the value of the characteristic.
     if(pRemoteCharacteristic3->canRead()) {
-      std::string value = pRemoteCharacteristic3->readValue();
+      String value = pRemoteCharacteristic3->readValue();
       std::copy(value.begin(), value.end(), std::begin(arr));
     }
     if(pRemoteCharacteristic3->canNotify()) {
@@ -354,7 +356,7 @@ class MyAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
     Serial.print("BLE Advertised Device found: ");
     Serial.println(advertisedDevice.toString().c_str());
     // We have found a device, let us now see if it contains the service we are looking for.
-    if (advertisedDevice.haveServiceUUID() && advertisedDevice.isAdvertisingService(serviceGearingUUID)) {
+    if (advertisedDevice.toString().indexOf("KICKR BIKE") > -1) {
       BLEDevice::getScan()->stop();
       myDevice = new BLEAdvertisedDevice(advertisedDevice);
       doConnect = true;
@@ -369,7 +371,7 @@ void setup() {
   Serial.println("Starting Arduino BLE Client application...");
   EEPROM.begin(EEPROM_SIZE);
   restoreEEPROMSettings();
-
+  
   pinMode(BOTTOM_BUTTON_PIN, INPUT_PULLUP);
   pinMode(TOP_BUTTON_PIN, INPUT_PULLUP);
 
